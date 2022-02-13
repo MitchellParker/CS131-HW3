@@ -1,8 +1,6 @@
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.zip.CRC32;
-import java.util.zip.Deflater;
 
 public class Pigzj {
   
@@ -24,13 +22,12 @@ public class Pigzj {
     crc.reset();
     /* Buffers for input blocks, compressed bocks, and dictionaries */
     byte[] blockBuf = new byte[BLOCK_SIZE];
-    byte[] cmpBlockBuf = new byte[BLOCK_SIZE * 2];
     byte[] dictBuf = new byte[DICT_SIZE];
-    Deflater compressor = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
     InputStream inStream = System.in;
-    ByteArrayOutputStream outStream = new ByteArrayOutputStream();
     Writer writer = new Writer(System.out);
     writer.start();
+    Compressor compressor = new Compressor(writer);
+    compressor.start();
     long totalBytesRead = 0;
     boolean hasDict = false;
     int nBytes = inStream.read(blockBuf);
@@ -39,56 +36,33 @@ public class Pigzj {
       totalBytesRead += nBytes;
       /* Update the CRC every time we read in a new block. */
       crc.update(blockBuf, 0, nBytes);
-      compressor.reset();
       /* If we saved a dictionary from the last block, prime the deflater with
        * it */
       if (hasDict) {
-        compressor.setDictionary(dictBuf);
-      }
-
-      compressor.setInput(blockBuf, 0, nBytes);
-
-      if (nBytes != BLOCK_SIZE) {
-        /* If we've read all the bytes in the file, this is the last block.
-           We have to clean out the deflater properly */
-        if (!compressor.finished()) {
-          compressor.finish();
-          while (!compressor.finished()) {
-            int deflatedBytes = compressor.deflate(
-                cmpBlockBuf, 0, cmpBlockBuf.length, Deflater.NO_FLUSH);
-            if (deflatedBytes > 0) {
-              outStream.write(cmpBlockBuf, 0, deflatedBytes);
-            }
-          }
-          writer.writeBlock(blockIndex, outStream, true);
+        while (!compressor.setInput(blockIndex, blockBuf, nBytes, dictBuf, nBytes != BLOCK_SIZE)) {
+          Thread.yield();
         }
       } else {
-        /* Otherwise, just deflate and then write the compressed block out. Not
-      using SYNC _FLUSH here leads to some issues, but using it probably results
-      in less efficient compression. Ther e's probably a better
-           way to deal with this. */
-        int deflatedBytes = compressor.deflate(
-            cmpBlockBuf, 0, cmpBlockBuf.length, Deflater.SYNC_FLUSH);
-        if (deflatedBytes > 0) {
-          outStream.write(cmpBlockBuf, 0, deflatedBytes);
+        while (!compressor.setInput(blockIndex, blockBuf, nBytes, null, nBytes != BLOCK_SIZE)) {
+          Thread.yield();
         }
-        writer.writeBlock(blockIndex, outStream, false);
       }
       /* If we read in enough bytes in this block, store the last part as the
  diction ary for the next iteration */
       if (nBytes >= DICT_SIZE) {
+        dictBuf = new byte[DICT_SIZE];
         System.arraycopy(blockBuf, nBytes - DICT_SIZE, dictBuf, 0, DICT_SIZE);
         hasDict = true;
       } else {
         hasDict = false;
       }
 
-      compressor = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
-      outStream = new ByteArrayOutputStream();
+      blockBuf = new byte[BLOCK_SIZE];
       nBytes = inStream.read(blockBuf);
       blockIndex++;
     }
     /* Finally, write the trailer and then write to STDOUT */
     writer.writeTrailer(crc.getValue(), totalBytesRead);
+    compressor.end();
   }
 }

@@ -21,7 +21,7 @@ public class Compressor extends Thread {
   public Compressor(Writer w) {
     this.writer = w;
     this.compressedBuf = new byte[Pigzj.BLOCK_SIZE * 2];
-    def = new Deflater();
+    def = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
 
     this.awaitingInput = true;
     this.hasUnprocessedInput = false;
@@ -31,7 +31,7 @@ public class Compressor extends Thread {
   public synchronized boolean setInput(int blockIndex, byte[] blockBuf, int nBytes, byte[] dict, boolean lastBlock) {
     if (!awaitingInput) {
       return false;
-    } 
+    }
     this.awaitingInput = false;
     this.hasUnprocessedInput = true;
     this.blockIndex = blockIndex;
@@ -59,6 +59,7 @@ public class Compressor extends Thread {
           ByteArrayOutputStream buf = new ByteArrayOutputStream();
           compressInto(buf);
           writer.writeBlock(this.blockIndex, buf, this.lastBlock);
+          this.awaitingInput = true;
         }
       }
     } catch (InterruptedException e) {
@@ -102,5 +103,6 @@ public class Compressor extends Thread {
         out.write(compressedBuf, 0, deflatedBytes);
       }
     }
+    this.hasUnprocessedInput = false;
   }
 }
