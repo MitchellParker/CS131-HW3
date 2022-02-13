@@ -3,9 +3,10 @@ import java.util.zip.Deflater;
 
 public class Compressor extends Thread {
 
+  private final Pigzj pigzj;
   private final Writer writer;
   private final byte[] compressedBuf;
-  private Deflater def;
+  private final Deflater def;
 
   private int blockIndex;     // index of current input
   private byte[] input;       // uncompressed data
@@ -18,7 +19,8 @@ public class Compressor extends Thread {
   private boolean hasUnprocessedInput;
   private boolean readyToExit;
 
-  public Compressor(Writer w) {
+  public Compressor(Pigzj p, Writer w) {
+    this.pigzj = p;
     this.writer = w;
     this.compressedBuf = new byte[Pigzj.BLOCK_SIZE * 2];
     def = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
@@ -43,6 +45,10 @@ public class Compressor extends Thread {
     return true;
   }
 
+  public boolean available() {
+    return awaitingInput;
+  }
+
   public synchronized void end() {
     this.readyToExit = true;
     notify();
@@ -60,6 +66,7 @@ public class Compressor extends Thread {
           compressInto(buf);
           writer.writeBlock(this.blockIndex, buf, this.lastBlock);
           this.awaitingInput = true;
+          pigzj.notifyCompressorAvailable();
         }
       }
     } catch (InterruptedException e) {

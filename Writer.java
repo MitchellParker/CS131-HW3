@@ -10,10 +10,7 @@ public class Writer extends Thread {
   private final static int GZIP_MAGIC = 0x8b1f;
   private final static int TRAILER_SIZE = 8;
   
-  // where the output goes when it's all recieved
-  private final OutputStream finalDestination;
-  // until all output is recieved, it is buffered in here
-  private final ByteArrayOutputStream outStream;
+  private final OutputStream outStream;
   private final Map<Integer, ByteArrayOutputStream> compressedBlocks;
 
   private int next;
@@ -21,9 +18,8 @@ public class Writer extends Thread {
   private byte[] trailer;
 
   public Writer(OutputStream out) {
-    this.finalDestination = out;
-    this.outStream = new ByteArrayOutputStream();
-    this.compressedBlocks = new HashMap<>();
+    this.outStream = out;
+    this.compressedBlocks = new HashMap<Integer, ByteArrayOutputStream>();
 
     this.next = 0;
     this.finalBlock = -1;
@@ -56,7 +52,7 @@ public class Writer extends Thread {
     try {
       outputHeader();
       while (blocksRemaining()) {
-        while (!compressedBlocks.containsKey(next)) {
+        while (!compressedBlocks.containsKey(next) && blocksRemaining()) {
           wait();
         }
         outputNextBlock();
@@ -65,9 +61,9 @@ public class Writer extends Thread {
         wait();
       }
       outputTrailer();
-      this.outStream.writeTo(finalDestination);
     } catch (Exception e) {
       System.err.println(e.getMessage());
+      System.exit(1);
     }
   }
 

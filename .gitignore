@@ -1,2 +1,4 @@
-tester2.sh
-tester.sh
+*.sh
+*.class
+*.gz
+*.txt
